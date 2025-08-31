@@ -121,7 +121,11 @@
                 const data = await response.json();
                 
                 if (!response.ok) {
-                    throw new Error(data.error || 'Failed to send message');
+                    const errorMessage = data.error || 
+                                      data.message || 
+                                      `Server error: ${response.status} ${response.statusText}`;
+                    console.error('Server response:', data);
+                    throw new Error(errorMessage);
                 }
                 
                 // Show success message
@@ -130,8 +134,15 @@
                 form.reset();
                 
             } catch (error) {
-                console.error('Error:', error);
-                alert('There was a problem sending your message. Please try again later.\n\n' + error.message);
+                console.error('Full error:', error);
+                console.error('Error details:', {
+                    message: error.message,
+                    name: error.name,
+                    stack: error.stack
+                });
+                alert('There was a problem sending your message. Please try again later.\n\n' + 
+                     `Error: ${error.message}\n\n` +
+                     'Check the browser console for more details.');
             } finally {
                 // Reset button state
                 submitButton.disabled = false;

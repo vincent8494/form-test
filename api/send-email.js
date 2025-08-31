@@ -1,5 +1,11 @@
 const nodemailer = require('nodemailer');
 
+// Enable better error logging
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  throw reason; // Let Vercel handle the error
+});
+
 // Create a transporter object using Gmail SMTP
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -10,19 +16,58 @@ const transporter = nodemailer.createTransport({
 });
 
 module.exports = async (req, res) => {
+  console.log('Request received:', {
+    method: req.method,
+    url: req.url,
+    headers: req.headers,
+    body: req.body
+  });
+
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   // Only allow POST requests
   if (req.method !== 'POST') {
+    console.error('Method not allowed:', req.method);
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Log environment variables (except sensitive ones)
+  console.log('Environment variables:', {
+    EMAIL_USER: process.env.EMAIL_USER ? '***' : 'Not set',
+    RECIPIENT_EMAIL: process.env.RECIPIENT_EMAIL || 'Not set',
+    NODE_ENV: process.env.NODE_ENV || 'development'
+  });
+
+  // Get form data from request body
+  const { name, email, subject, message } = req.body;
+  
+  console.log('Form data received:', { name, email, subject, message: message ? '***' : 'empty' });
+  
+  // Validate required fields
+  if (!name || !email || !subject || !message) {
+    console.error('Validation failed - Missing required fields');
+    return res.status(400).json({
+      error: 'All fields are required',
+      received: { name: !!name, email: !!email, subject: !!subject, message: !!message }
+    });
+  }
+  
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    console.error('Validation failed - Invalid email format');
+    return res.status(400).json({ error: 'Invalid email format' });
+  }
+
   try {
-    const { name, email, subject, message } = req.body;
-
-    // Basic validation
-    if (!name || !email || !subject || !message) {
-      return res.status(400).json({ error: 'All fields are required' });
-    }
-
     // Email options
     const mailOptions = {
       from: `${name} <${process.env.EMAIL_USER}>`,
@@ -106,13 +151,41 @@ module.exports = async (req, res) => {
     };
 
     // Send email
-    await transporter.sendMail(mailOptions);
-    
-    res.status(200).json({ message: 'Message sent successfully' });
+    console.log('Sending email...');
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent:', info.messageId);
+
+    // Send success response
+    res.status(200).json({ 
+      success: true,
+      message: 'Email sent successfully',
+      messageId: info.messageId
+    });
   } catch (error) {
-    console.error('Error sending email:', error);
-    res.status(500).json({ 
-      error: 'Failed to send message',
+    console.error('Error sending email:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      response: error.response
+    });
+    
+    // More specific error handling
+    let errorMessage = 'Failed to send email';
+    let statusCode = 500;
+    
+    if (error.code === 'EAUTH') {
+      errorMessage = 'Authentication failed. Please check email credentials.';
+      statusCode = 401;
+    } else if (error.code === 'EENVELOPE') {
+      errorMessage = 'Invalid email parameters';
+      statusCode = 400;
+    } else if (error.code === 'ECONNECTION') {
+      errorMessage = 'Could not connect to email server';
+      statusCode = 503;
+    }
+    
+    res.status(statusCode).json({ 
+      error: errorMessage,
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

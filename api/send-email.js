@@ -46,17 +46,17 @@ module.exports = async (req, res) => {
     NODE_ENV: process.env.NODE_ENV || 'development'
   });
 
-  // Get form data from request body
-  const { name, email, subject, message } = req.body;
+  // Get form data from request body (updated: no subject, include phone)
+  const { name, phone, email, message } = req.body;
   
-  console.log('Form data received:', { name, email, subject, message: message ? '***' : 'empty' });
+  console.log('Form data received:', { name, phone, email, message: message ? '***' : 'empty' });
   
   // Validate required fields
-  if (!name || !email || !subject || !message) {
+  if (!name || !phone || !email || !message) {
     console.error('Validation failed - Missing required fields');
     return res.status(400).json({
       error: 'All fields are required',
-      received: { name: !!name, email: !!email, subject: !!subject, message: !!message }
+      received: { name: !!name, phone: !!phone, email: !!email, message: !!message }
     });
   }
   
@@ -66,13 +66,19 @@ module.exports = async (req, res) => {
     console.error('Validation failed - Invalid email format');
     return res.status(400).json({ error: 'Invalid email format' });
   }
+  // Light phone validation: allow digits, spaces, +, -, parentheses; require at least 7 digits
+  const digitCount = (phone.match(/\d/g) || []).length;
+  if (digitCount < 7) {
+    console.error('Validation failed - Phone appears invalid');
+    return res.status(400).json({ error: 'Invalid phone number' });
+  }
 
   try {
     // Email options
     const mailOptions = {
       from: `${name} <${process.env.EMAIL_USER}>`,
       to: process.env.RECIPIENT_EMAIL || 'assignmenthelp6435@gmail.com',
-      subject: `Re: ${subject}`,
+      subject: 'New Call Request',
       html: `
         <!DOCTYPE html>
         <html>
@@ -111,10 +117,11 @@ module.exports = async (req, res) => {
           </div>
           
           <div class='content'>
-            <h2 style='color: #2c3e50; margin-top: 0;'>${subject}</h2>
+            <h2 style='color: #2c3e50; margin-top: 0;'>Let us call you</h2>
             
             <div class='details'>
               <p style='margin: 5px 0;'><strong>From:</strong> ${name}</p>
+              <p style='margin: 5px 0;'><strong>Phone:</strong> ${phone}</p>
               <p style='margin: 5px 0;'><strong>Email:</strong> ${email}</p>
               <p style='margin: 5px 0;'><strong>Date:</strong> ${new Date().toLocaleString()}</p>
             </div>
@@ -133,12 +140,12 @@ module.exports = async (req, res) => {
         </html>
       `,
       text: `
-        NEW WEBSITE INQUIRY
+        NEW CALL REQUEST
         ${'='.repeat(50)}
         
-        Subject: ${subject}
         Date: ${new Date().toLocaleString()}
         From: ${name} <${email}>
+        Phone: ${phone}
         
         ${'-'.repeat(50)}
         MESSAGE:
